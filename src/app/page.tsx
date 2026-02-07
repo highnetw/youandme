@@ -1,3 +1,6 @@
+// 1. 캐시를 무효화하고 매번 서버에서 데이터를 새로 가져오도록 설정 (핵심!)
+export const revalidate = 0;
+
 import { supabase } from '@/lib/supabase';
 
 export default async function Home() {
