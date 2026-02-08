@@ -41,3 +41,6 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
   );
 }
 
+
+
+
