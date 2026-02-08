@@ -1,0 +1,10 @@
+export default function TestPage() {
+  const currentTime = new Date().toLocaleTimeString();
+  return (
+    <div className="p-20 text-center">
+      <h1 className="text-4xl font-bold text-blue-600">Vercel 테스트 성공!</h1>
+      <p className="mt-4 text-xl">현재 배포된 시각: {currentTime}</p>
+      <p className="mt-2 text-gray-500">이 페이지가 보인다면 배포가 완료된 것입니다.</p>
+    </div>
+  );
+}
