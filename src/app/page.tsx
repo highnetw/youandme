@@ -4,9 +4,9 @@ export const revalidate = 0;
 import { supabase } from '@/lib/supabase';
 
 export default async function Home() {
-  // Supabase에서 데이터 가져오기
-  const { data: rooms, error } = await supabase.from('rooms').select('*');
-
+  
+// sort_order 숫자가 작은 것부터(ascending) 정렬해서 가져오라는 뜻입니다.
+const { data: rooms, error } = await supabase.from('rooms').select('*').order('sort_order', { ascending: true });
   if (error) {
     return <div className="p-10 text-red-500">에러 발생: {error.message}</div>;
   }
