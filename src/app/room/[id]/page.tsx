@@ -13,6 +13,8 @@ export default async function RoomDetailPage({ params }: { params: { id: string 
     .eq("sort_order", roomId)
     .single();
 
+    console.log("지금 찾는 번호:", roomId, "가져온 데이터:", room, "에러내용:", error);
+
   // 데이터를 못 찾았을 때의 처리
   if (!room || error) {
     return (
