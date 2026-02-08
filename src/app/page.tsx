@@ -2,11 +2,13 @@
 export const revalidate = 0;
 
 import { supabase } from '@/lib/supabase';
+import Link from "next/link"; // 링크 기능을 불러옵니다.
 
 export default async function Home() {
   
-// sort_order 숫자가 작은 것부터(ascending) 정렬해서 가져오라는 뜻입니다.
-const { data: rooms, error } = await supabase.from('rooms').select('*').order('sort_order', { ascending: true });
+  // sort_order 숫자가 작은 것부터(ascending) 정렬해서 가져오라는 뜻입니다.
+  const { data: rooms, error } = await supabase.from('rooms').select('*').order('sort_order', { ascending: true });
+  
   if (error) {
     return <div className="p-10 text-red-500">에러 발생: {error.message}</div>;
   }
@@ -20,21 +22,33 @@ const { data: rooms, error } = await supabase.from('rooms').select('*').order('s
       <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
         {rooms && rooms.length > 0 ? (
           rooms.map((room) => (
-            <div key={room.id} className="bg-white overflow-hidden rounded-xl shadow-md border border-slate-200">
-              {/* 이미지 영역 */}
-              {room.image_url ? (
-                <img src={room.image_url} alt={room.name} className="w-full h-48 object-cover" />
-              ) : (
-                <div className="w-full h-48 bg-slate-200 flex items-center justify-center text-slate-400">이미지 준비중</div>
-              )}
-              
-              {/* 텍스트 영역 */}
-              <div className="p-6">
-                <h2 className="text-xl font-semibold mb-2 text-slate-800">{room.name}</h2>
-                <p className="text-blue-600 font-bold mb-4">₩{room.price?.toLocaleString()}</p>
-                <p className="text-slate-600 text-sm leading-relaxed">{room.description}</p>
+            /* 🔗 뼈대 공사: 여기서 상세 페이지(/room/번호)로 연결합니다. */
+            <Link 
+              href={`/room/${room.sort_order}`} 
+              key={room.id} 
+              className="group block transition-transform hover:-translate-y-1"
+            >
+              <div className="bg-white overflow-hidden rounded-xl shadow-md border border-slate-200 h-full group-hover:shadow-lg transition-shadow">
+                {/* 이미지 영역 */}
+                {room.image_url ? (
+                  <img src={room.image_url} alt={room.name} className="w-full h-48 object-cover" />
+                ) : (
+                  <div className="w-full h-48 bg-slate-200 flex items-center justify-center text-slate-400">이미지 준비중</div>
+                )}
+                
+                {/* 텍스트 영역 */}
+                <div className="p-6">
+                  <h2 className="text-xl font-semibold mb-2 text-slate-800 group-hover:text-blue-600 transition-colors">
+                    {room.name}
+                  </h2>
+                  <p className="text-blue-600 font-bold mb-4">₩{room.price?.toLocaleString()}</p>
+                  {/* 상세 페이지에서 볼 수 있으니 목록에서는 설명을 두 줄로 제한합니다 */}
+                  <p className="text-slate-600 text-sm leading-relaxed line-clamp-2">
+                    {room.description}
+                  </p>
+                </div>
               </div>
-            </div>
+            </Link>
           ))
         ) : (
           <p className="text-slate-500">등록된 객실 정보가 없습니다.</p>
