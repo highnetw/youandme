@@ -13,10 +13,11 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
     .select('*')
     .eq('sort_order', id)
     .single();
+
   const { data: reviews } = await supabase
     .from('reviews')
     .select('*')
-    .eq('room_id', room.id) // sort_order가 아닌 진짜 'id'로 찾습니다
+    .eq('room_id', room.id)
     .order('created_at', { ascending: false });
 
   if (error || !room) {
@@ -24,10 +25,9 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
   }
 
   return (
-    /* 1. overflow-x-hidden으로 가로 흔들림을 잡고 전체 배경색 지정 */
     <div className="w-full min-h-screen bg-[#FDFCF8] overflow-x-hidden">
 
-      {/* 2. 상단 이미지 영역 */}
+      {/* 1. 상단 이미지 영역 */}
       <section className="relative w-full h-[45vh]">
         <Image
           src={room.image_url}
@@ -44,7 +44,7 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
         </Link>
       </section>
 
-      {/* 3. 메인 콘텐츠 영역 (여기가 핵심입니다) */}
+      {/* 2. 메인 콘텐츠 영역 */}
       <main className="relative -mt-6 z-10 bg-[#FDFCF8] rounded-t-[32px] px-6 pt-8">
         <div className="max-w-xl mx-auto">
           {/* 제목 및 가격 */}
@@ -79,21 +79,20 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
             </p>
           </article>
 
-          {/* [중요] 스크롤을 끝까지 밀어주는 가짜 공간! 
-              하단 고정 버튼(RESERVE) 높이만큼 미리 공간을 확보해둡니다. */}
-          <div className="h-40 w-full"></div>
+          <hr className="my-10 border-gray-200/50" />
 
-
-  <hr className="my-10 border-gray-200/50" />
-
-          {/* 2. 리뷰 섹션 추가 */}
+          {/* 3. 리뷰 섹션 (버튼 삽입 위치!) */}
           <section className="mb-12">
             <div className="flex items-center justify-between mb-6">
               <h2 className="text-xl font-bold text-gray-900 font-serif italic">Guest Experience</h2>
-              <div className="flex items-center text-[#B8860B]">
-                <span className="text-lg mr-1">★</span>
-                <span className="font-bold">5.0</span>
-              </div>
+
+              {/* ★★★ 이 부분이 추가되었습니다 ★★★ */}
+              <Link
+                href={`/room/${id}/write`}
+                className="text-[#B8860B] border border-[#B8860B] px-4 py-2 rounded-full text-xs font-bold hover:bg-[#B8860B] hover:text-white transition-colors"
+              >
+                후기 쓰기
+              </Link>
             </div>
 
             {reviews && reviews.length > 0 ? (
@@ -116,7 +115,6 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
                 ))}
               </div>
             ) : (
-              /* 리뷰가 없을 때 보여줄 화면 */
               <div className="py-16 text-center bg-white rounded-3xl border border-dashed border-gray-200">
                 <p className="text-gray-400 text-[16px] font-serif italic">아직 작성된 후기가 없습니다.</p>
               </div>
@@ -127,7 +125,7 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
           <div className="h-40 w-full"></div>
         </div>
       </main>
-      
+
       {/* 4. 하단 고정 예약 바 */}
       <footer className="fixed bottom-0 left-0 right-0 bg-white/95 backdrop-blur-md border-t border-gray-100 p-5 z-50">
         <div className="max-w-xl mx-auto flex items-center justify-between gap-4">
@@ -135,9 +133,12 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
             <p className="text-[10px] text-[#B8860B] font-bold uppercase tracking-widest">Available Now</p>
             <p className="text-sm font-medium text-gray-500">날짜를 선택해 주세요</p>
           </div>
-          <button className="bg-gray-900 text-white px-8 py-4 rounded-2xl font-bold text-[15px] tracking-widest shadow-lg active:scale-95 transition-all">
-            RESERVE
-          </button>
+          {/* 버튼을 클릭하면 예약 페이지로 이동하도록 Link를 감싸줍니다 */}
+          <Link href={`/room/${id}/reserve`} className="flex-1">
+            <button className="w-full bg-gray-900 text-white px-8 py-4 rounded-2xl font-bold text-[15px] tracking-widest shadow-lg active:scale-95 transition-all">
+              RESERVE
+            </button>
+          </Link>
         </div>
       </footer>
     </div>
