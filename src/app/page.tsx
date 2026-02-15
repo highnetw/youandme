@@ -18,7 +18,7 @@ export default async function Home() {
         <header className="mb-12 text-center md:text-left">
           <span className="text-[#B8860B] text-xs font-bold tracking-[0.3em] uppercase">Private & Nature</span>
           <h1 className="text-4xl md:text-5xl font-serif text-gray-900 mt-3 leading-tight">
-            youandme <span className="font-light italic">Rooms</span>
+            YouAndMe <span className="font-light italic">Rooms</span>
           </h1>
           <p className="text-gray-500 mt-4 text-lg">품격 있는 휴식을 위한 특별한 공간</p>
         </header>
@@ -40,7 +40,7 @@ export default async function Home() {
                     {room.image_url ? (
                       <img 
                         src={room.image_url} 
-                        alt={room.title} 
+                        alt={room.sort_order} 
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                       />
                     ) : (
