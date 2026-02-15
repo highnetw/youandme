@@ -28,8 +28,8 @@ export default async function Home() {
           {rooms && rooms.length > 0 ? (
             rooms.map((room) => (
               <Link 
-                key={room.sort_order} 
-                href={`/room/${room.sort_order}`} 
+                key={room.id} 
+                href={`/room/${room.id}`} 
                 className="group block"
               >
                 {/* 카드 디자인: 둥근 모서리와 부드러운 그림자 */}
@@ -40,7 +40,7 @@ export default async function Home() {
                     {room.image_url ? (
                       <img 
                         src={room.image_url} 
-                        alt={room.sort_order} 
+                        alt={room.id} 
                         className="w-full h-full object-cover transition-transform duration-700 group-hover:scale-110" 
                       />
                     ) : (
