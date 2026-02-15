@@ -1,72 +1,92 @@
-import { supabase } from "@/lib/supabase";
-import Image from "next/image";
-import Link from "next/link";
+export const revalidate = 0;
+
+import React from 'react';
+import Image from 'next/image';
+import Link from 'next/link';
+import { supabase } from '@/lib/supabase'; // Supabase 불러오기
 
 export default async function RoomDetailPage({ params }: { params: Promise<{ id: string }> }) {
-  // 1. 주소창의 번호가 도착할 때까지 기다립니다.
   const { id } = await params;
 
-  // 2. 이제 확실한 번호(id)를 들고 창고로 갑니다.
+  // 1. Supabase에서 해당 id(sort_order)를 가진 방 정보 하나만 가져오기
   const { data: room, error } = await supabase
-    .from("rooms")
-    .select("*")
-    .eq("sort_order", id)
-    .single();
+    .from('rooms')
+    .select('*')
+    .eq('sort_order', id)
+    .single(); // 데이터 하나만 가져오라는 명령
 
-  if (!room || error) {
-    return (
-      <div className="p-10 text-center">
-        <h1 className="text-2xl font-bold text-red-500">방 정보를 찾을 수 없습니다.</h1>
-        <div className="mt-4 p-4 bg-gray-50 rounded-lg inline-block text-left">
-          <p className="text-gray-600">● 찾는 번호: <span className="font-bold">{id}</span></p>
-          {error && <p className="text-red-400 text-xs mt-2">● 에러 원인: {error.message}</p>}
-        </div>
-        <br />
-        <Link href="/" className="mt-6 inline-block text-blue-500 underline font-medium">
-          메인 목록으로 돌아가기
-        </Link>
-      </div>
-    );
+  if (error || !room) {
+    return <div className="p-10 text-center">객실 정보를 찾을 수 없습니다.</div>;
   }
 
   return (
-    <div className="max-w-4xl mx-auto p-6 bg-white min-h-screen">
-      <h1 className="text-4xl font-bold mb-8 text-gray-900 tracking-tight">{room.name}</h1>
+    <div className="flex flex-col min-h-screen bg-[#FDFCF8]">
       
-      <div className="relative w-full h-[300px] md:h-[500px] mb-10 overflow-hidden rounded-3xl shadow-xl">
-        <Image 
-          src={room.image_url || "/next.svg"} 
-          alt={room.name} 
-          fill 
-          className="object-cover"
+      {/* 1. 상단 이미지 */}
+      <section className="relative w-full h-[45vh] overflow-hidden">
+        <Image
+          src={room.image_url} // DB의 image_url 사용
+          alt={room.title}
+          fill
+          className="object-cover transition-transform duration-700 hover:scale-105"
           priority
         />
-      </div>
-
-      <div className="bg-gray-50 p-8 md:p-12 rounded-3xl border border-gray-100 shadow-sm mb-10">
-        <div className="flex justify-between items-center mb-8 pb-6 border-b border-gray-200">
-          <div>
-            <p className="text-sm text-gray-500 uppercase tracking-widest mb-1">숙박 요금</p>
-            <span className="text-3xl font-black text-blue-600">{room.price}</span>
-          </div>
-          <span className="bg-green-500 text-white px-4 py-1.5 rounded-full text-xs font-bold shadow-sm">
-            예약 가능
-          </span>
-        </div>
+        <div className="absolute inset-0 bg-black/10" />
         
-        <div>
-          <h2 className="text-xl font-bold mb-4 text-gray-800">숙소 상세 설명</h2>
-          <p className="text-lg text-gray-600 leading-relaxed whitespace-pre-wrap">
-            {room.description}
-          </p>
-        </div>
-      </div>
-
-      <div className="text-center pb-20">
-        <Link href="/" className="inline-block bg-gray-900 text-white px-10 py-4 rounded-2xl font-bold hover:bg-gray-800 transition-all shadow-lg">
-          ← 다른 방 더 보기
+        <Link href="/" className="absolute top-6 left-6 bg-white/80 p-2 rounded-full shadow-md z-20">
+          <svg className="w-6 h-6 text-gray-800" fill="none" stroke="currentColor" viewBox="0 0 24 24">
+            <path strokeLinecap="round" strokeLinejoin="round" strokeWidth="2" d="M15 19l-7-7 7-7" />
+          </svg>
         </Link>
-      </div>
+      </section>
+
+      {/* 2. 객실 정보 (박스 크기를 줄이고 압축적으로 변경) */}
+      <main className="flex-1 -mt-5 relative z-10 bg-[#FDFCF8] rounded-t-[24px] px-5 pt-6 pb-24">
+        <div className="max-w-xl mx-auto">
+          <div className="flex justify-between items-center mb-4">
+            <div className="flex-1">
+              <span className="text-[#B8860B] text-[18px] font-bold tracking-widest uppercase">Premium Stay</span>
+              <h1 className="text-2xl font-serif text-gray-900 leading-tight">{room.title}</h1>
+            </div>
+            <div className="text-right">
+              <span className="text-xl font-bold text-gray-900">₩{room.price?.toLocaleString()}</span>
+              <p className="text-gray-400 text-[12px]">1박 기준</p>
+            </div>
+          </div>
+
+          {/* 특징 아이콘: DB에 features 배열이 있다면 출력 */}
+          <div className="grid grid-cols-2 gap-2 mb-6">
+            {room.features && room.features.map((f: string) => (
+              <div key={f} className="flex items-center space-x-2 text-gray-600 text-[16px] bg-white border border-gray-100 p-2 rounded-lg shadow-sm">
+                <span className="text-[#B8860B]">✓</span>
+                <span>{f}</span>
+              </div>
+            ))}
+          </div>
+
+          <hr className="my-5 border-gray-200/50" />
+
+          <article>
+            <h2 className="text-md font-bold text-gray-800 mb-2">객실 소개</h2>
+            <p className="text-gray-600 leading-snug text-[18px]">
+              {room.description}
+            </p>
+          </article>
+        </div>
+      </main>
+
+      {/* 3. 하단 고정 예약 바 */}
+      <footer className="fixed bottom-0 left-0 right-0 bg-white/90 backdrop-blur-md border-t border-gray-100 p-5 z-50">
+        <div className="max-w-2xl mx-auto flex items-center gap-4">
+          <div className="flex-1">
+             <p className="text-[10px] text-[#B8860B] font-bold uppercase tracking-widest">Available Now</p>
+             <p className="text-sm font-medium text-gray-500">날짜를 선택해 주세요</p>
+          </div>
+          <button className="bg-gray-900 text-white px-10 py-4 rounded-xl font-bold text-sm tracking-widest hover:bg-[#B8860B] transition-all active:scale-95 shadow-lg">
+            RESERVE
+          </button>
+        </div>
+      </footer>
     </div>
   );
 }

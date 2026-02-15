@@ -1,0 +1,1077 @@
+# 펜션 앱 시스템 설계 - 상세 분석 및 개선안
+
+전체적으로 잘 구성된 기획입니다. 실제 개발 관점에서 더 치밀하게 검토하고 보완해드리겠습니다.
+
+---
+
+## 📋 Chapter 1: 인증 및 권한 관리 (Authentication & Authorization)
+
+### 현재 설계 검토
+Supabase Auth 선택은 적절합니다. 하지만 몇 가지 보완이 필요합니다.
+
+### 개선 및 추가 사항
+
+**1-1. 사용자 프로필 테이블 구조 개선**
+```sql
+-- profiles 테이블
+CREATE TABLE profiles (
+  id UUID PRIMARY KEY REFERENCES auth.users(id) ON DELETE CASCADE,
+  email TEXT NOT NULL,
+  name TEXT,
+  phone TEXT,
+  role TEXT DEFAULT 'user' CHECK (role IN ('user', 'admin')),
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 자동 프로필 생성 트리거
+CREATE OR REPLACE FUNCTION handle_new_user()
+RETURNS TRIGGER AS $$
+BEGIN
+  INSERT INTO public.profiles (id, email, name)
+  VALUES (NEW.id, NEW.email, NEW.raw_user_meta_data->>'name');
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql SECURITY DEFINER;
+```
+
+**1-2. Row Level Security (RLS) 정책 필수**
+```sql
+-- 사용자는 본인 프로필만 읽기/수정 가능
+ALTER TABLE profiles ENABLE ROW LEVEL SECURITY;
+
+CREATE POLICY "Users can view own profile"
+  ON profiles FOR SELECT
+  USING (auth.uid() = id);
+
+CREATE POLICY "Users can update own profile"
+  ON profiles FOR UPDATE
+  USING (auth.uid() = id);
+```
+
+**1-3. 권한 관리 전략**
+- `role` 컬럼: 'user', 'admin' 외에 'manager'(예약 관리만), 'content_editor'(콘텐츠 관리만) 추가 고려
+- **토큰 갱신 전략**: Supabase는 기본 1시간 후 토큰 만료. `refreshSession()` 자동 호출 로직 구현 필요
+- **소셜 로그인 우선순위**: 카카오 > 네이버 > 구글 (국내 사용자 기준)
+
+**1-4. Middleware 구현 예시**
+```typescript
+// middleware.ts
+import { createMiddlewareClient } from '@supabase/auth-helpers-nextjs'
+import { NextResponse } from 'next/server'
+import type { NextRequest } from 'next/server'
+
+export async function middleware(req: NextRequest) {
+  const res = NextResponse.next()
+  const supabase = createMiddlewareClient({ req, res })
+  
+  const { data: { session } } = await supabase.auth.getSession()
+  
+  // 보호된 라우트 체크
+  if (req.nextUrl.pathname.startsWith('/admin') && session?.user?.user_metadata?.role !== 'admin') {
+    return NextResponse.redirect(new URL('/', req.url))
+  }
+  
+  return res
+}
+```
+
+---
+
+## 📋 Chapter 2: 게시판 시스템 설계
+
+### 현재 설계 검토
+통합형 vs 분리형 고민이 적절합니다. 실무적으로는 **분리형을 추천**합니다.
+
+### 개선 및 추가 사항
+
+**2-1. 테이블 구조 (분리형 추천)**
+```sql
+-- 공지사항/자유게시판
+CREATE TABLE posts (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  author_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  category TEXT NOT NULL CHECK (category IN ('notice', 'free')),
+  title TEXT NOT NULL,
+  content TEXT NOT NULL,
+  view_count INTEGER DEFAULT 0,
+  is_pinned BOOLEAN DEFAULT FALSE, -- 상단 고정 기능
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 게시글 이미지 (1:N 관계)
+CREATE TABLE post_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 댓글
+CREATE TABLE post_comments (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  post_id UUID REFERENCES posts(id) ON DELETE CASCADE,
+  author_id UUID REFERENCES profiles(id) ON DELETE SET NULL,
+  content TEXT NOT NULL,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+-- 인덱스 추가 (성능 최적화)
+CREATE INDEX idx_posts_category ON posts(category);
+CREATE INDEX idx_posts_created_at ON posts(created_at DESC);
+CREATE INDEX idx_posts_pinned ON posts(is_pinned, created_at DESC);
+```
+
+**2-2. 페이지네이션 전략**
+```typescript
+// 무한 스크롤 방식 (모바일 앱 적합)
+const { data, error } = await supabase
+  .from('posts')
+  .select('*, author:profiles(name), comments:post_comments(count)')
+  .eq('category', 'free')
+  .order('created_at', { ascending: false })
+  .range(page * limit, (page + 1) * limit - 1);
+
+// 또는 전통적 페이지네이션 (웹 적합)
+const { count } = await supabase
+  .from('posts')
+  .select('*', { count: 'exact', head: true });
+```
+
+**2-3. 이미지 업로드 최적화**
+```typescript
+// 이미지 리사이징 + WebP 변환
+import sharp from 'sharp';
+
+async function uploadOptimizedImage(file: File) {
+  const buffer = await file.arrayBuffer();
+  const optimized = await sharp(Buffer.from(buffer))
+    .resize(1200, 1200, { fit: 'inside', withoutEnlargement: true })
+    .webp({ quality: 80 })
+    .toBuffer();
+    
+  const { data, error } = await supabase.storage
+    .from('post-images')
+    .upload(`${Date.now()}.webp`, optimized);
+    
+  return data?.path;
+}
+```
+
+**2-4. 검색 기능 추가**
+```sql
+-- Full-text search 인덱스
+CREATE INDEX idx_posts_search ON posts 
+  USING gin(to_tsvector('korean', title || ' ' || content));
+
+-- 검색 쿼리
+SELECT * FROM posts
+WHERE to_tsvector('korean', title || ' ' || content) @@ plainto_tsquery('korean', '검색어');
+```
+
+---
+
+## 📋 Chapter 3: 사용후기 시스템 설계
+
+### 현재 설계 검토
+`room_id` 연결은 필수입니다. 추가로 **인증된 예약자만 후기 작성** 가능하도록 검증 로직이 필요합니다.
+
+### 개선 및 추가 사항
+
+**3-1. 테이블 구조**
+```sql
+CREATE TABLE reviews (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  booking_id UUID UNIQUE REFERENCES bookings(id) ON DELETE CASCADE, -- 1예약 1후기
+  room_id UUID REFERENCES rooms(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  rating INTEGER NOT NULL CHECK (rating BETWEEN 1 AND 5),
+  content TEXT NOT NULL,
+  cleanliness_rating INTEGER CHECK (cleanliness_rating BETWEEN 1 AND 5),
+  location_rating INTEGER CHECK (location_rating BETWEEN 1 AND 5),
+  service_rating INTEGER CHECK (service_rating BETWEEN 1 AND 5),
+  is_verified BOOLEAN DEFAULT FALSE, -- 관리자 승인
+  admin_reply TEXT, -- 관리자 답변
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE review_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  review_id UUID REFERENCES reviews(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  sort_order INTEGER DEFAULT 0
+);
+
+-- 인덱스
+CREATE INDEX idx_reviews_room_id ON reviews(room_id);
+CREATE INDEX idx_reviews_verified ON reviews(is_verified, created_at DESC);
+```
+
+**3-2. 후기 작성 권한 검증**
+```typescript
+// 체크아웃 후 14일 이내, 실제 숙박한 사람만 작성 가능
+async function canWriteReview(userId: string, bookingId: string) {
+  const { data: booking } = await supabase
+    .from('bookings')
+    .select('user_id, check_out, status')
+    .eq('id', bookingId)
+    .single();
+    
+  if (!booking || booking.user_id !== userId) return false;
+  if (booking.status !== 'completed') return false;
+  
+  const daysSinceCheckout = (Date.now() - new Date(booking.check_out).getTime()) / (1000 * 60 * 60 * 24);
+  if (daysSinceCheckout > 14) return false;
+  
+  // 이미 작성한 후기가 있는지 확인
+  const { data: existingReview } = await supabase
+    .from('reviews')
+    .select('id')
+    .eq('booking_id', bookingId)
+    .single();
+    
+  return !existingReview;
+}
+```
+
+**3-3. 평균 평점 실시간 업데이트**
+```sql
+-- rooms 테이블에 캐싱 컬럼 추가
+ALTER TABLE rooms ADD COLUMN avg_rating DECIMAL(2,1);
+ALTER TABLE rooms ADD COLUMN review_count INTEGER DEFAULT 0;
+
+-- 트리거로 자동 업데이트
+CREATE OR REPLACE FUNCTION update_room_rating()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE rooms
+  SET 
+    avg_rating = (SELECT AVG(rating) FROM reviews WHERE room_id = NEW.room_id AND is_verified = TRUE),
+    review_count = (SELECT COUNT(*) FROM reviews WHERE room_id = NEW.room_id AND is_verified = TRUE)
+  WHERE id = NEW.room_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+
+CREATE TRIGGER trigger_update_room_rating
+AFTER INSERT OR UPDATE ON reviews
+FOR EACH ROW EXECUTE FUNCTION update_room_rating();
+```
+
+**3-4. 베스트 리뷰 자동 선정**
+```sql
+-- 좋아요 기능 추가
+CREATE TABLE review_likes (
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  review_id UUID REFERENCES reviews(id) ON DELETE CASCADE,
+  PRIMARY KEY (user_id, review_id)
+);
+
+-- 베스트 리뷰 쿼리 (평점 + 좋아요 + 최신순)
+SELECT r.*, COUNT(rl.user_id) as like_count
+FROM reviews r
+LEFT JOIN review_likes rl ON r.id = rl.review_id
+WHERE r.is_verified = TRUE
+GROUP BY r.id
+ORDER BY (r.rating * 10 + COUNT(rl.user_id)) DESC, r.created_at DESC
+LIMIT 3;
+```
+
+---
+
+## 📋 Chapter 4: 예약 시스템 설계 (핵심 모듈)
+
+### 현재 설계 검토
+기본 구조는 좋으나, **동시성 제어, 결제 연동, 취소 정책** 등이 추가로 필요합니다.
+
+### 개선 및 추가 사항
+
+**4-1. 테이블 구조 (확장 버전)**
+```sql
+CREATE TABLE bookings (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  room_id UUID NOT NULL REFERENCES rooms(id) ON DELETE RESTRICT,
+  user_id UUID NOT NULL REFERENCES profiles(id) ON DELETE RESTRICT,
+  check_in DATE NOT NULL,
+  check_out DATE NOT NULL,
+  guests_count INTEGER NOT NULL DEFAULT 2,
+  total_price INTEGER NOT NULL,
+  status TEXT NOT NULL DEFAULT 'pending' CHECK (
+    status IN ('pending', 'confirmed', 'cancelled', 'completed', 'no_show')
+  ),
+  payment_status TEXT DEFAULT 'unpaid' CHECK (
+    payment_status IN ('unpaid', 'paid', 'refunded')
+  ),
+  payment_method TEXT CHECK (payment_method IN ('card', 'transfer', 'virtual_account')),
+  payment_id TEXT, -- PG사 거래 ID
+  special_requests TEXT,
+  cancellation_reason TEXT,
+  cancelled_at TIMESTAMP WITH TIME ZONE,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  
+  -- 체크인은 체크아웃보다 앞이어야 함
+  CONSTRAINT check_dates CHECK (check_in < check_out),
+  -- 최소 1박 이상
+  CONSTRAINT min_stay CHECK (check_out - check_in >= 1)
+);
+
+-- 복합 인덱스 (날짜 검색 최적화)
+CREATE INDEX idx_bookings_room_dates ON bookings(room_id, check_in, check_out);
+CREATE INDEX idx_bookings_user ON bookings(user_id, created_at DESC);
+CREATE INDEX idx_bookings_status ON bookings(status) WHERE status IN ('confirmed', 'pending');
+```
+
+**4-2. 중복 예약 방지 (트랜잭션 + 락)**
+```typescript
+// PostgreSQL Row Lock 사용
+async function createBooking(bookingData: BookingInput) {
+  const { data, error } = await supabase.rpc('create_booking_safe', {
+    p_room_id: bookingData.room_id,
+    p_user_id: bookingData.user_id,
+    p_check_in: bookingData.check_in,
+    p_check_out: bookingData.check_out,
+    p_total_price: bookingData.total_price
+  });
+  
+  return { data, error };
+}
+```
+
+```sql
+-- PostgreSQL Function (동시성 제어)
+CREATE OR REPLACE FUNCTION create_booking_safe(
+  p_room_id UUID,
+  p_user_id UUID,
+  p_check_in DATE,
+  p_check_out DATE,
+  p_total_price INTEGER
+)
+RETURNS UUID AS $$
+DECLARE
+  v_booking_id UUID;
+  v_conflict_count INTEGER;
+BEGIN
+  -- 해당 방을 행 잠금 (다른 트랜잭션 대기)
+  PERFORM * FROM rooms WHERE id = p_room_id FOR UPDATE;
+  
+  -- 중복 예약 체크
+  SELECT COUNT(*) INTO v_conflict_count
+  FROM bookings
+  WHERE room_id = p_room_id
+    AND status IN ('confirmed', 'pending')
+    AND NOT (p_check_out <= check_in OR p_check_in >= check_out);
+  
+  IF v_conflict_count > 0 THEN
+    RAISE EXCEPTION '이미 예약된 날짜입니다';
+  END IF;
+  
+  -- 예약 생성
+  INSERT INTO bookings (room_id, user_id, check_in, check_out, total_price)
+  VALUES (p_room_id, p_user_id, p_check_in, p_check_out, p_total_price)
+  RETURNING id INTO v_booking_id;
+  
+  RETURN v_booking_id;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**4-3. 예약 가능 날짜 조회 (캘린더)**
+```typescript
+// 특정 월의 예약 불가 날짜 반환
+async function getUnavailableDates(roomId: string, year: number, month: number) {
+  const startDate = `${year}-${month.toString().padStart(2, '0')}-01`;
+  const endDate = new Date(year, month, 0).toISOString().split('T')[0];
+  
+  const { data } = await supabase
+    .from('bookings')
+    .select('check_in, check_out')
+    .eq('room_id', roomId)
+    .in('status', ['confirmed', 'pending'])
+    .or(`check_in.lte.${endDate},check_out.gte.${startDate}`);
+    
+  // 날짜 범위를 배열로 변환
+  const unavailableDates = new Set<string>();
+  data?.forEach(booking => {
+    let currentDate = new Date(booking.check_in);
+    const lastDate = new Date(booking.check_out);
+    
+    while (currentDate < lastDate) {
+      unavailableDates.add(currentDate.toISOString().split('T')[0]);
+      currentDate.setDate(currentDate.getDate() + 1);
+    }
+  });
+  
+  return Array.from(unavailableDates);
+}
+```
+
+**4-4. 결제 연동 (토스페이먼츠 추천)**
+```typescript
+// 결제 승인 후 예약 확정
+async function confirmPayment(paymentId: string, orderId: string) {
+  // 1. PG사 결제 검증
+  const paymentData = await verifyPaymentWithToss(paymentId);
+  
+  // 2. 예약 상태 업데이트
+  const { data, error } = await supabase
+    .from('bookings')
+    .update({
+      status: 'confirmed',
+      payment_status: 'paid',
+      payment_id: paymentId,
+      payment_method: paymentData.method
+    })
+    .eq('id', orderId)
+    .select()
+    .single();
+    
+  // 3. 예약 확정 이메일 발송
+  if (data) {
+    await sendConfirmationEmail(data.user_id, data);
+  }
+  
+  return { data, error };
+}
+```
+
+**4-5. 취소 정책 자동화**
+```sql
+-- 취소 수수료 계산 함수
+CREATE OR REPLACE FUNCTION calculate_refund_amount(p_booking_id UUID)
+RETURNS INTEGER AS $$
+DECLARE
+  v_total_price INTEGER;
+  v_check_in DATE;
+  v_days_until_checkin INTEGER;
+  v_refund_rate DECIMAL;
+BEGIN
+  SELECT total_price, check_in INTO v_total_price, v_check_in
+  FROM bookings WHERE id = p_booking_id;
+  
+  v_days_until_checkin := v_check_in - CURRENT_DATE;
+  
+  -- 취소 정책 (예: 7일 전 100%, 3일 전 50%, 당일 0%)
+  IF v_days_until_checkin >= 7 THEN
+    v_refund_rate := 1.0;
+  ELSIF v_days_until_checkin >= 3 THEN
+    v_refund_rate := 0.5;
+  ELSE
+    v_refund_rate := 0.0;
+  END IF;
+  
+  RETURN FLOOR(v_total_price * v_refund_rate);
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**4-6. 예약 알림 시스템**
+```sql
+-- 예약 알림 테이블
+CREATE TABLE booking_notifications (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  booking_id UUID REFERENCES bookings(id) ON DELETE CASCADE,
+  notification_type TEXT NOT NULL CHECK (
+    notification_type IN ('confirmation', 'reminder_3days', 'reminder_1day', 'checkin', 'checkout')
+  ),
+  sent_at TIMESTAMP WITH TIME ZONE,
+  scheduled_at TIMESTAMP WITH TIME ZONE NOT NULL,
+  is_sent BOOLEAN DEFAULT FALSE
+);
+
+-- 체크인 3일 전 알림 생성 트리거
+CREATE OR REPLACE FUNCTION schedule_booking_notifications()
+RETURNS TRIGGER AS $$
+BEGIN
+  IF NEW.status = 'confirmed' THEN
+    INSERT INTO booking_notifications (booking_id, notification_type, scheduled_at)
+    VALUES 
+      (NEW.id, 'confirmation', NOW()),
+      (NEW.id, 'reminder_3days', NEW.check_in - INTERVAL '3 days'),
+      (NEW.id, 'reminder_1day', NEW.check_in - INTERVAL '1 day');
+  END IF;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+---
+
+## 📋 Chapter 5: 주변 명소 및 지도 시스템
+
+### 현재 설계 검토
+기본 구조는 좋으나, **카테고리 분류, 사용자 참여, SEO 최적화**가 추가로 필요합니다.
+
+### 개선 및 추가 사항
+
+**5-1. 테이블 구조 (확장 버전)**
+```sql
+CREATE TABLE spot_categories (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  name TEXT NOT NULL UNIQUE,
+  icon TEXT, -- 아이콘 URL 또는 이름
+  sort_order INTEGER DEFAULT 0
+);
+
+-- 초기 카테고리 데이터
+INSERT INTO spot_categories (name, icon, sort_order) VALUES
+  ('관광지', 'map-pin', 1),
+  ('음식점', 'utensils', 2),
+  ('카페', 'coffee', 3),
+  ('문화유적', 'landmark', 4),
+  ('체험활동', 'activity', 5),
+  ('쇼핑', 'shopping-bag', 6);
+
+CREATE TABLE spots (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  category_id UUID REFERENCES spot_categories(id),
+  name TEXT NOT NULL,
+  description TEXT,
+  address TEXT,
+  latitude DECIMAL(10, 8) NOT NULL,
+  longitude DECIMAL(11, 8) NOT NULL,
+  phone TEXT,
+  website TEXT,
+  business_hours JSONB, -- {"mon": "09:00-18:00", "tue": "09:00-18:00", ...}
+  distance_from_pension INTEGER, -- 펜션으로부터 거리(미터)
+  featured BOOLEAN DEFAULT FALSE, -- 추천 명소
+  view_count INTEGER DEFAULT 0,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  updated_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE spot_images (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  spot_id UUID REFERENCES spots(id) ON DELETE CASCADE,
+  image_url TEXT NOT NULL,
+  is_primary BOOLEAN DEFAULT FALSE,
+  sort_order INTEGER DEFAULT 0
+);
+
+-- 공간 인덱스 (가까운 명소 검색 최적화)
+CREATE INDEX idx_spots_location ON spots USING gist (
+  ll_to_earth(latitude, longitude)
+);
+```
+
+**5-2. 거리 기반 검색**
+```sql
+-- PostGIS 대신 earthdistance 모듈 사용
+CREATE EXTENSION IF NOT EXISTS cube;
+CREATE EXTENSION IF NOT EXISTS earthdistance;
+
+-- 펜션으로부터 5km 이내 명소 검색
+SELECT 
+  s.*,
+  earth_distance(
+    ll_to_earth(s.latitude, s.longitude),
+    ll_to_earth(37.5665, 126.9780) -- 펜션 좌표
+  ) AS distance_meters
+FROM spots s
+WHERE earth_box(ll_to_earth(37.5665, 126.9780), 5000) @> ll_to_earth(s.latitude, s.longitude)
+ORDER BY distance_meters;
+```
+
+**5-3. 지도 마커 클러스터링 (프론트엔드)**
+```typescript
+// Next.js + Kakao Maps 예시
+import { useEffect, useRef } from 'react';
+
+function SpotMap({ spots, pensionCoords }) {
+  const mapRef = useRef(null);
+  
+  useEffect(() => {
+    const container = mapRef.current;
+    const map = new kakao.maps.Map(container, {
+      center: new kakao.maps.LatLng(pensionCoords.lat, pensionCoords.lng),
+      level: 5
+    });
+    
+    // 펜션 마커 (특별한 아이콘)
+    const pensionMarker = new kakao.maps.Marker({
+      position: new kakao.maps.LatLng(pensionCoords.lat, pensionCoords.lng),
+      image: new kakao.maps.MarkerImage('/pension-icon.png', new kakao.maps.Size(40, 40))
+    });
+    pensionMarker.setMap(map);
+    
+    // 명소 마커 (카테고리별 색상)
+    spots.forEach(spot => {
+      const marker = new kakao.maps.Marker({
+        position: new kakao.maps.LatLng(spot.latitude, spot.longitude),
+        title: spot.name
+      });
+      
+      // 클릭 시 정보창
+      kakao.maps.event.addListener(marker, 'click', () => {
+        const infowindow = new kakao.maps.InfoWindow({
+          content: `
+            <div style="padding:10px;">
+              <strong>${spot.name}</strong><br/>
+              <span>${spot.category_name}</span><br/>
+              <a href="/spots/${spot.id}">상세보기</a>
+            </div>
+          `
+        });
+        infowindow.open(map, marker);
+      });
+      
+      marker.setMap(map);
+    });
+    
+  }, [spots]);
+  
+  return <div ref={mapRef} style={{ width: '100%', height: '500px' }} />;
+}
+```
+
+**5-4. 사용자 참여 기능 (방문 인증)**
+```sql
+CREATE TABLE spot_visits (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  spot_id UUID REFERENCES spots(id) ON DELETE CASCADE,
+  user_id UUID REFERENCES profiles(id) ON DELETE CASCADE,
+  visited_at DATE NOT NULL DEFAULT CURRENT_DATE,
+  photo_url TEXT,
+  comment TEXT,
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW(),
+  UNIQUE(spot_id, user_id, visited_at)
+);
+
+-- spots 테이블에 방문자 수 캐싱
+ALTER TABLE spots ADD COLUMN visit_count INTEGER DEFAULT 0;
+
+CREATE OR REPLACE FUNCTION update_spot_visit_count()
+RETURNS TRIGGER AS $$
+BEGIN
+  UPDATE spots
+  SET visit_count = (SELECT COUNT(DISTINCT user_id) FROM spot_visits WHERE spot_id = NEW.spot_id)
+  WHERE id = NEW.spot_id;
+  RETURN NEW;
+END;
+$$ LANGUAGE plpgsql;
+```
+
+**5-5. 추천 코스 (여행 일정)**
+```sql
+CREATE TABLE travel_courses (
+  id UUID PRIMARY KEY DEFAULT uuid_generate_v4(),
+  title TEXT NOT NULL,
+  description TEXT,
+  duration_hours INTEGER, -- 소요 시간
+  difficulty TEXT CHECK (difficulty IN ('easy', 'moderate', 'hard')),
+  created_by UUID REFERENCES profiles(id),
+  is_official BOOLEAN DEFAULT FALSE, -- 펜션 공식 추천
+  created_at TIMESTAMP WITH TIME ZONE DEFAULT NOW()
+);
+
+CREATE TABLE course_spots (
+  course_id UUID REFERENCES travel_courses(id) ON DELETE CASCADE,
+  spot_id UUID REFERENCES spots(id) ON DELETE CASCADE,
+  sequence INTEGER NOT NULL,
+  estimated_time_minutes INTEGER,
+  notes TEXT,
+  PRIMARY KEY (course_id, spot_id)
+);
+```
+
+**5-6. SEO 최적화 (구조화된 데이터)**
+```typescript
+// Next.js 페이지에 JSON-LD 추가
+export async function generateMetadata({ params }) {
+  const spot = await getSpot(params.id);
+  
+  return {
+    title: `${spot.name} - 주변 명소`,
+    description: spot.description,
+    openGraph: {
+      images: [spot.primary_image_url],
+    },
+    other: {
+      'application/ld+json': JSON.stringify({
+        "@context": "https://schema.org",
+        "@type": "TouristAttraction",
+        "name": spot.name,
+        "description": spot.description,
+        "address": {
+          "@type": "PostalAddress",
+          "streetAddress": spot.address
+        },
+        "geo": {
+          "@type": "GeoCoordinates",
+          "latitude": spot.latitude,
+          "longitude": spot.longitude
+        },
+        "image": spot.primary_image_url
+      })
+    }
+  };
+}
+```
+
+---
+
+## 📋 Chapter 6: 전체 시스템 아키텍처 개선
+
+### 6-1. 데이터베이스 ERD (최종 버전)
+
+```
+profiles (사용자)
+  ├─ bookings (예약)
+  │    ├─ reviews (후기) [1:1]
+  │    └─ payment_logs (결제 로그)
+  ├─ posts (게시글)
+  │    ├─ post_images (게시글 이미지) [1:N]
+  │    └─ post_comments (댓글) [1:N]
+  └─ spot_visits (명소 방문 인증)
+
+rooms (객실)
+  ├─ bookings (예약) [1:N]
+  ├─ reviews (후기) [1:N]
+  └─ room_images (객실 이미지) [1:N]
+
+spot_categories (명소 카테고리)
+  └─ spots (명소) [1:N]
+       ├─ spot_images (명소 이미지) [1:N]
+       ├─ spot_visits (방문 인증) [1:N]
+       └─ course_spots (코스-명소 연결)
+
+travel_courses (여행 코스)
+  └─ course_spots (코스-명소 연결) [M:N]
+```
+
+### 6-2. API 라우트 구조 (Next.js App Router)
+
+```
+app/
+├── api/
+│   ├── auth/
+│   │   ├── login/route.ts
+│   │   ├── register/route.ts
+│   │   └── callback/route.ts
+│   ├── rooms/
+│   │   ├── route.ts (GET: 목록, POST: 생성-관리자만)
+│   │   └── [id]/
+│   │       ├── route.ts (GET: 상세, PATCH: 수정)
+│   │       └── availability/route.ts (GET: 예약가능일)
+│   ├── bookings/
+│   │   ├── route.ts (POST: 예약 생성)
+│   │   ├── [id]/route.ts (GET: 상세, PATCH: 수정)
+│   │   └── [id]/cancel/route.ts (POST: 취소)
+│   ├── reviews/
+│   │   ├── route.ts (GET: 목록, POST: 작성)
+│   │   └── [id]/route.ts (PATCH: 수정, DELETE: 삭제)
+│   ├── spots/
+│   │   ├── route.ts (GET: 목록, POST: 생성-관리자)
+│   │   └── nearby/route.ts (GET: 주변 명소)
+│   └── admin/
+│       ├── dashboard/route.ts
+│       └── stats/route.ts
+```
+
+### 6-3. 성능 최적화 전략
+
+**캐싱 전략**
+```typescript
+// Next.js 캐싱 + Supabase
+export async function getRooms() {
+  return await fetch('/api/rooms', {
+    next: { 
+      revalidate: 3600, // 1시간 캐싱
+      tags: ['rooms'] 
+    }
+  });
+}
+
+// 캐시 무효화 (객실 정보 수정 시)
+import { revalidateTag } from 'next/cache';
+revalidateTag('rooms');
+```
+
+**이미지 최적화**
+```typescript
+// next/image 자동 최적화 + Supabase Transform
+import Image from 'next/image';
+
+<Image
+  src={`${supabaseUrl}/storage/v1/object/public/rooms/${image}?width=800&quality=80`}
+  alt={room.name}
+  width={800}
+  height={600}
+  loading="lazy"
+  placeholder="blur"
+/>
+```
+
+**데이터베이스 연결 풀링**
+```typescript
+// supabase 클라이언트 싱글톤
+import { createClient } from '@supabase/supabase-js';
+
+let supabaseInstance: any = null;
+
+export function getSupabase() {
+  if (!supabaseInstance) {
+    supabaseInstance = createClient(
+      process.env.NEXT_PUBLIC_SUPABASE_URL!,
+      process.env.SUPABASE_SERVICE_ROLE_KEY!,
+      {
+        db: { schema: 'public' },
+        auth: { persistSession: false }
+      }
+    );
+  }
+  return supabaseInstance;
+}
+```
+
+### 6-4. 보안 강화
+
+**Rate Limiting**
+```typescript
+// middleware.ts에 추가
+import { Ratelimit } from "@upstash/ratelimit";
+import { Redis } from "@upstash/redis";
+
+const ratelimit = new Ratelimit({
+  redis: Redis.fromEnv(),
+  limiter: Ratelimit.slidingWindow(10, "1 m"), // 분당 10회
+});
+
+export async function middleware(request: NextRequest) {
+  if (request.nextUrl.pathname.startsWith('/api/')) {
+    const ip = request.ip ?? '127.0.0.1';
+    const { success } = await ratelimit.limit(ip);
+    
+    if (!success) {
+      return new NextResponse('Too Many Requests', { status: 429 });
+    }
+  }
+}
+```
+
+**SQL Injection 방지**
+```typescript
+// Supabase는 기본적으로 Prepared Statement 사용
+// 하지만 RPC 함수에서는 주의 필요
+
+// ❌ 나쁜 예
+const { data } = await supabase.rpc('search_spots', {
+  query: userInput // 직접 전달 위험
+});
+
+// ✅ 좋은 예 (파라미터화)
+const { data } = await supabase
+  .from('spots')
+  .select('*')
+  .textSearch('name', userInput, { type: 'websearch' });
+```
+
+**XSS 방지**
+```typescript
+// React는 기본적으로 XSS 방지
+// 하지만 dangerouslySetInnerHTML 사용 시 주의
+
+import DOMPurify from 'isomorphic-dompurify';
+
+function SafeHTML({ html }) {
+  const clean = DOMPurify.sanitize(html, {
+    ALLOWED_TAGS: ['b', 'i', 'em', 'strong', 'a', 'p', 'br'],
+    ALLOWED_ATTR: ['href', 'target']
+  });
+  
+  return <div dangerouslySetInnerHTML={{ __html: clean }} />;
+}
+```
+
+### 6-5. 모니터링 및 로깅
+
+**에러 추적 (Sentry)**
+```typescript
+// sentry.config.ts
+import * as Sentry from "@sentry/nextjs";
+
+Sentry.init({
+  dsn: process.env.NEXT_PUBLIC_SENTRY_DSN,
+  tracesSampleRate: 0.1,
+  beforeSend(event, hint) {
+    // 민감 정보 필터링
+    if (event.request) {
+      delete event.request.cookies;
+    }
+    return event;
+  },
+});
+```
+
+**분석 (Vercel Analytics + Google Analytics)**
+```typescript
+// app/layout.tsx
+import { Analytics } from '@vercel/analytics/react';
+import { GoogleAnalytics } from '@next/third-parties/google';
+
+export default function RootLayout({ children }) {
+  return (
+    <html>
+      <body>
+        {children}
+        <Analytics />
+        <GoogleAnalytics gaId={process.env.NEXT_PUBLIC_GA_ID!} />
+      </body>
+    </html>
+  );
+}
+```
+
+---
+
+## 📋 Chapter 7: 개발 프로세스 및 추천 사항
+
+### 7-1. 개발 우선순위
+
+**Phase 1 (MVP - 4주)**
+1. 로그인 및 프로필 관리
+2. 객실 조회 및 상세 페이지
+3. 예약 시스템 핵심 기능
+4. 관리자 예약 관리 대시보드
+
+**Phase 2 (추가 기능 - 3주)**
+5. 후기 시스템
+6. 게시판 (공지사항 위주)
+7. 결제 연동 (토스페이먼츠)
+
+**Phase 3 (최적화 - 2주)**
+8. 주변 명소 및 지도
+9. 모바일 최적화
+10. 성능 개선 및 SEO
+
+### 7-2. 기술 스택 최종 추천
+
+**프론트엔드**
+- Framework: Next.js 14+ (App Router)
+- UI: Tailwind CSS + shadcn/ui (빠른 개발)
+- 상태관리: Zustand (Supabase와 궁합 좋음)
+- 폼 관리: React Hook Form + Zod (유효성 검사)
+- 날짜: date-fns (가벼움) 또는 Day.js
+
+**백엔드/인프라**
+- Database: Supabase (PostgreSQL)
+- Auth: Supabase Auth
+- Storage: Supabase Storage
+- API: Next.js API Routes
+- Hosting: Vercel (Next.js 최적화)
+
+**결제/알림**
+- Payment: 토스페이먼츠 (국내 점유율 1위)
+- Email: Resend (Next.js 친화적) 또는 SendGrid
+- SMS: 알리고 (저렴한 국내 서비스)
+
+**모니터링**
+- Error: Sentry
+- Analytics: Vercel Analytics + Google Analytics
+- Uptime: BetterStack
+
+### 7-3. 코드 구조 베스트 프랙티스
+
+**폴더 구조**
+```
+project/
+├── app/
+│   ├── (auth)/           # 인증 관련 페이지
+│   ├── (main)/           # 메인 사이트
+│   │   ├── rooms/
+│   │   ├── bookings/
+│   │   └── spots/
+│   ├── admin/            # 관리자 페이지
+│   └── api/              # API 라우트
+├── components/
+│   ├── ui/               # shadcn/ui 컴포넌트
+│   ├── rooms/
+│   ├── bookings/
+│   └── common/
+├── lib/
+│   ├── supabase/
+│   │   ├── client.ts     # 클라이언트용
+│   │   ├── server.ts     # 서버용
+│   │   └── admin.ts      # 관리자용
+│   ├── utils/
+│   └── validations/      # Zod 스키마
+└── types/
+    └── database.types.ts # Supabase 자동 생성
+```
+
+**환경 변수 관리**
+```bash
+# .env.local
+NEXT_PUBLIC_SUPABASE_URL=https://xxx.supabase.co
+NEXT_PUBLIC_SUPABASE_ANON_KEY=eyJxxx
+SUPABASE_SERVICE_ROLE_KEY=eyJxxx (서버 전용, 노출 금지)
+
+NEXT_PUBLIC_KAKAO_MAP_KEY=xxx
+TOSS_PAYMENTS_CLIENT_KEY=xxx
+TOSS_PAYMENTS_SECRET_KEY=xxx (서버 전용)
+
+SENTRY_DSN=https://xxx
+```
+
+### 7-4. 테스트 전략
+
+**필수 테스트 케이스**
+1. 예약 중복 방지 (동시 요청 시나리오)
+2. 결제 실패 시 롤백
+3. 권한 검증 (다른 사용자 예약 조회 시도)
+4. 파일 업로드 크기/타입 제한
+5. SQL Injection 시도
+
+**테스트 도구**
+```typescript
+// Playwright로 E2E 테스트
+import { test, expect } from '@playwright/test';
+
+test('예약 프로세스', async ({ page }) => {
+  await page.goto('/rooms/1');
+  await page.click('text=예약하기');
+  await page.fill('[name="checkIn"]', '2024-03-15');
+  await page.fill('[name="checkOut"]', '2024-03-16');
+  await page.click('text=결제하기');
+  
+  await expect(page).toHaveURL(/\/bookings\/confirm/);
+});
+```
+
+### 7-5. 배포 전 체크리스트
+
+- [ ] 환경 변수 프로덕션 설정
+- [ ] RLS 정책 전체 테이블 적용 확인
+- [ ] 이미지 최적화 (WebP 변환, 리사이징)
+- [ ] SEO 메타태그 (각 페이지)
+- [ ] 404/500 에러 페이지
+- [ ] 모바일 반응형 확인
+- [ ] 로딩 스켈레톤 UI
+- [ ] 접근성 (a11y) 기본 준수
+- [ ] HTTPS 강제 리다이렉트
+- [ ] Sitemap.xml / Robots.txt 생성
+
+---
+
+## 🎯 최종 요약 및 차별화 전략
+
+### 운영 측면 개선안
+
+1. **동적 가격 책정**: 주말/성수기 자동 가격 조정
+2. **쿠폰/프로모션**: 재방문 고객 할인 시스템
+3. **멤버십**: 누적 숙박일 기반 등급제
+4. **챗봇**: 간단한 문의 자동 응답 (OpenAI API)
+5. **다국어 지원**: 외국인 관광객 대비 (i18n)
+
+### 경쟁력 확보 포인트
+
+- **실시간 예약 현황**: "지금 3명이 이 객실을 보고 있습니다"
+- **포토 리뷰 보상**: 사진 후기 작성 시 쿠폰 지급
+- **가상 투어**: 360도 파노라마 이미지
+- **날씨 연동**: 체크인 날짜 기상 예보 자동 표시
+- **주변 맛집 큐레이션**: 후기 기반 추천 알고리즘
+
+이 설계안을 따라 개발하시면 확장 가능하고 안정적인 펜션 예약 시스템을 구축하실 수 있습니다. 추가 질문이나 특정 부분의 코드 예시가 필요하시면 말씀해주세요!
