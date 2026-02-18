@@ -7,7 +7,7 @@ import { useRouter, useParams } from 'next/navigation';
 export default function ReviewWritePage() {
   const router = useRouter();
   const params = useParams();
-  const roomId = params.id; // URL에서 방 ID(sort_order)를 가져옵니다.
+  const roomId = params.id; // URL에서 방 ID(id)를 가져옵니다.
 
   const [userName, setUserName] = useState('');
   const [rating, setRating] = useState(5);
@@ -18,11 +18,11 @@ export default function ReviewWritePage() {
     e.preventDefault();
     setIsSubmitting(true);
 
-    // 1. 먼저 해당 sort_order를 가진 방의 실제 'id'를 찾아야 합니다.
+    // 1. 방정보 조회
     const { data: room } = await supabase
       .from('rooms')
       .select('id')
-      .eq('sort_order', roomId)
+      .eq('id', roomId)
       .single();
 
     if (!room) {

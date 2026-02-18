@@ -11,18 +11,18 @@ export default async function RoomDetailPage({ params }: { params: Promise<{ id:
   const { data: room, error } = await supabase
     .from('rooms')
     .select('*')
-    .eq('sort_order', id)
+    .eq('id', id)
     .single();
+
+  if (error || !room) {
+    return <div className="p-10 text-center">객실 정보를 찾을 수 없습니다.</div>;
+  }
 
   const { data: reviews } = await supabase
     .from('reviews')
     .select('*')
     .eq('room_id', room.id)
     .order('created_at', { ascending: false });
-
-  if (error || !room) {
-    return <div className="p-10 text-center">객실 정보를 찾을 수 없습니다.</div>;
-  }
 
   return (
     <div className="w-full min-h-screen bg-[#FDFCF8] overflow-x-hidden">

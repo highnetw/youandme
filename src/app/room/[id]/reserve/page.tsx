@@ -54,7 +54,7 @@ export default function ReservePage() {
                 .from('reservations')
                 .insert([
                     {
-                        room_id: Number(Array.isArray(id) ? id[0] : id),
+                        room_id: Array.isArray(id) ? id[0] : id,
                         customer_name: customerName,
                         phone_number: phoneNumber,
                         simple_pwd: simplePwd,
