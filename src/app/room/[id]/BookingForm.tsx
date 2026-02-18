@@ -20,7 +20,7 @@ export default function BookingForm({ roomId, pricePerNight }: BookingFormProps)
     simple_pwd: '',
   });
 
-  const handleSubmit = async (e: React.FormEvent) => {
+const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
     setLoading(true);
 
@@ -32,17 +32,21 @@ export default function BookingForm({ roomId, pricePerNight }: BookingFormProps)
         check_in: formData.check_in,
         check_out: formData.check_out,
         simple_pwd: formData.simple_pwd,
-        total_price: pricePerNight, // 우선 1박 가격으로 세팅
+        total_price: pricePerNight, 
         status: '대기',
       },
     ]);
 
     if (error) {
-      alert('오류 발생: ' + error.message);
+      alert('오류: ' + error.message);
     } else {
-      alert('예약 신청이 완료되었습니다!');
-      // 택시 타고 확인 페이지로 이동!
-      router.push(`/check-reservation?name=${formData.customer_name}&pwd=${formData.simple_pwd}`);
+      // ★ 이 부분이 핵심입니다! 
+      // 1. 사용자에게 완료를 알리고
+      alert(`${formData.customer_name}님, 예약 신청이 완료되었습니다! 확인 페이지로 이동합니다.`);
+      
+      // 2. 예약 확인 페이지로 이동시키되, 브라우저 기록을 교체(replace)하여 
+      // 뒤로가기를 눌러도 다시 예약 폼으로 오지 않게 합니다.
+      router.replace(`/check-reservation?name=${formData.customer_name}&pwd=${formData.simple_pwd}`);
     }
     setLoading(false);
   };

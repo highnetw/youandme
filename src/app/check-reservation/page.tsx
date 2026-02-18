@@ -1,7 +1,8 @@
 'use client';
 
 import { useState } from 'react';
-import { supabase } from '@/lib/supabase'; // 설정된 supabase 경로에 맞춰주세요
+import Link from 'next/link'; // 1. Link 컴포넌트 추가
+import { supabase } from '@/lib/supabase';
 
 export default function CheckReservationPage() {
     const [name, setName] = useState('');
@@ -14,7 +15,6 @@ export default function CheckReservationPage() {
         setLoading(true);
         setReservation(null);
 
-        // 🔍 핵심 로직: 이름과 비밀번호가 동시에 일치하는 데이터를 찾습니다.
         const { data, error } = await supabase
             .from('reservations')
             .select('*, rooms(title)')
@@ -32,20 +32,20 @@ export default function CheckReservationPage() {
 
     return (
         <div className="max-w-md mx-auto p-6">
-            <h1 className="text-2xl font-bold mb-6 text-center">예약 확인</h1>
+            <h1 className="text-2xl font-bold mb-6 text-center text-gray-800">예약 확인</h1>
 
             <form onSubmit={handleCheck} className="space-y-4 mb-10">
                 <input
                     type="text" placeholder="성함" value={name}
                     onChange={(e) => setName(e.target.value)}
-                    className="w-full p-3 border rounded-lg" required
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" required
                 />
                 <input
                     type="password" placeholder="비밀번호 (4자리)" value={password}
                     onChange={(e) => setPassword(e.target.value)}
-                    className="w-full p-3 border rounded-lg" maxLength={4} required
+                    className="w-full p-3 border rounded-lg focus:ring-2 focus:ring-blue-500 outline-none" maxLength={4} required
                 />
-                <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold">
+                <button type="submit" className="w-full bg-blue-600 text-white p-3 rounded-lg font-bold hover:bg-blue-700 transition-colors">
                     {loading ? '조회 중...' : '예약 조회하기'}
                 </button>
             </form>
@@ -64,7 +64,6 @@ export default function CheckReservationPage() {
 
                         <div className="flex justify-between border-b pb-2">
                             <span className="text-gray-500">일정</span>
-                            {/* 연도 빼고 시원하게 보여주기 위해 slice(5) 적용! */}
                             <span className="font-medium">
                                 {String(reservation.check_in).slice(5)} ~ {String(reservation.check_out).slice(5)}
                             </span>
@@ -83,12 +82,21 @@ export default function CheckReservationPage() {
                         </div>
                     </div>
 
-                    {/* 안내 문구 추가 */}
                     <p className="mt-6 text-xs text-gray-400 text-center">
                         문의사항이 있으시면 관리자에게 연락 바랍니다.(031-100-1111)
                     </p>
                 </div>
             )}
-        </div>
+
+            {/* 2. 메인으로 돌아가기 버튼 (예약 조회 여부와 상관없이 항상 하단에 배치) */}
+            <div className="mt-12">
+                <Link
+                    href="/"
+                    className="block w-full bg-blue-600 text-white p-4 rounded-2xl text-center font-bold shadow-lg shadow-blue-100 hover:bg-blue-700 active:scale-95 transition-all"
+                >
+                    홈으로 돌아가기
+                </Link>
+            </div>
+        </div >
     );
 }
