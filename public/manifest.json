@@ -1,0 +1,23 @@
+{
+  "name": "You & Me 펜션",
+  "short_name": "You & Me",
+  "description": "품격 있으면서 럭셔리한 힐링을 위한 나를 위한 특별한 공간",
+  "start_url": "/",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#FDFCF8",
+  "theme_color": "#B8860B",
+  "icons": [
+    {
+      "src": "/icon-192x192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/icon-512x512.png",
+      "sizes": "512x512",
+      "type": "image/png"
+    }
+  ]
+}
