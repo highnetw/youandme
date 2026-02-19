@@ -11,10 +11,9 @@ export default async function Home() {
   }
 
   return (
-    // 배경색을 상세페이지와 같은 부드러운 베이지톤으로 변경
-    <main className="p-6 md:p-12 bg-[#FDFCF8] min-h-screen">
+    // 1. pb-32를 추가하여 하단바가 콘텐츠를 가리지 않게 여백 확보
+    <main id="top" className="p-6 md:p-12 bg-[#FDFCF8] min-h-screen pb-32">
       <div className="max-w-6xl mx-auto">
-        {/* 헤더 부분: 폰트와 자간 조정으로 품격 상승 */}
         <header className="mb-12 text-center md:text-left">
           <span className="text-[#B8860B] text-xs font-bold tracking-[0.3em] uppercase">Private & Nature</span>
           <h1 className="text-4xl md:text-5xl font-serif text-gray-900 mt-3 leading-tight">
@@ -23,7 +22,6 @@ export default async function Home() {
           <p className="text-gray-500 mt-4 text-lg">품격 있는 휴식을 위한 특별한 공간</p>
         </header>
         
-        {/* 그리드 간격 넓힘 */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {rooms && rooms.length > 0 ? (
             rooms.map((room) => (
@@ -32,10 +30,7 @@ export default async function Home() {
                 href={`/room/${room.id}`} 
                 className="group block"
               >
-                {/* 카드 디자인: 둥근 모서리와 부드러운 그림자 */}
                 <div className="bg-white overflow-hidden rounded-[32px] shadow-sm border border-gray-100 h-full transition-all duration-500 hover:shadow-2xl hover:-translate-y-2">
-                  
-                  {/* 이미지 영역 */}
                   <div className="relative w-full h-64 overflow-hidden">
                     {room.image_url ? (
                       <img 
@@ -48,7 +43,6 @@ export default async function Home() {
                         Stay youandme
                       </div>
                     )}
-                    {/* 우측 상단 골드 라벨 */}
                     <div className="absolute top-5 right-5">
                       <div className="bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full shadow-sm">
                         <p className="text-[#B8860B] text-[10px] font-bold tracking-widest uppercase">Select</p>
@@ -56,7 +50,6 @@ export default async function Home() {
                     </div>
                   </div>
                   
-                  {/* 텍스트 영역: 상세페이지 폰트 사이즈(18px) 감각 반영 */}
                   <div className="p-8">
                     <div className="mb-4">
                       <h2 className="text-2xl font-serif text-gray-900 group-hover:text-[#B8860B] transition-colors mb-2">
@@ -85,6 +78,27 @@ export default async function Home() {
               <p className="text-gray-400 font-serif text-xl italic">객실 정보를 불러오는 중입니다...</p>
             </div>
           )}
+        </div>
+      </div>
+
+      {/* 📱 2. 모바일 하단 고정 메뉴 바 추가 */}
+      <div className="fixed bottom-6 left-0 right-0 z-50 px-6">
+        <div className="max-w-md mx-auto bg-gray-900/90 backdrop-blur-xl rounded-[24px] p-2 shadow-2xl flex gap-2 border border-white/10">
+          {/* 방 둘러보기: 클릭 시 상단(#top)으로 부드럽게 이동 */}
+          <Link 
+            href="#top"
+            className="flex-1 text-white py-4 rounded-[18px] font-bold text-center text-sm active:scale-95 transition-all"
+          >
+            방 둘러보기
+          </Link>
+
+          {/* 나의 예약확인: 강조색(골드/블루) 적용 */}
+          <Link 
+            href="/check-reservation"
+            className="flex-1 bg-blue-600 text-white py-4 rounded-[18px] font-bold text-center text-sm shadow-lg active:scale-95 transition-all"
+          >
+            나의 예약확인
+          </Link>
         </div>
       </div>
     </main>
