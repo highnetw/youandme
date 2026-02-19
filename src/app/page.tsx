@@ -11,9 +11,9 @@ export default async function Home() {
   }
 
   return (
-    // 1. pb-32를 추가하여 하단바가 콘텐츠를 가리지 않게 여백 확보
-    <main id="top" className="p-6 md:p-12 bg-[#FDFCF8] min-h-screen pb-32">
+    <main className="p-6 md:p-12 bg-[#FDFCF8] min-h-screen">
       <div className="max-w-6xl mx-auto">
+        {/* 헤더 섹션: 사진과 문구가 돋보이는 구간 */}
         <header className="mb-12 text-center md:text-left">
           <span className="text-[#B8860B] text-xs font-bold tracking-[0.3em] uppercase">Private & Nature</span>
           <h1 className="text-4xl md:text-5xl font-serif text-gray-900 mt-3 leading-tight">
@@ -22,14 +22,11 @@ export default async function Home() {
           <p className="text-gray-500 mt-4 text-lg">품격 있는 휴식을 위한 특별한 공간</p>
         </header>
         
+        {/* 객실 리스트 섹션 (최대 7개) */}
         <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-10">
           {rooms && rooms.length > 0 ? (
             rooms.map((room) => (
-              <Link 
-                key={room.id} 
-                href={`/room/${room.id}`} 
-                className="group block"
-              >
+              <Link key={room.id} href={`/room/${room.id}`} className="group block">
                 <div className="bg-white overflow-hidden rounded-[32px] shadow-sm border border-gray-100 h-full transition-all duration-500 hover:shadow-2xl hover:-translate-y-2">
                   <div className="relative w-full h-64 overflow-hidden">
                     {room.image_url ? (
@@ -43,61 +40,38 @@ export default async function Home() {
                         Stay youandme
                       </div>
                     )}
-                    <div className="absolute top-5 right-5">
-                      <div className="bg-white/80 backdrop-blur-md px-4 py-1.5 rounded-full shadow-sm">
-                        <p className="text-[#B8860B] text-[10px] font-bold tracking-widest uppercase">Select</p>
-                      </div>
-                    </div>
                   </div>
                   
                   <div className="p-8">
-                    <div className="mb-4">
-                      <h2 className="text-2xl font-serif text-gray-900 group-hover:text-[#B8860B] transition-colors mb-2">
-                        {room.title}
-                      </h2>
-                      <div className="w-10 h-[2px] bg-[#B8860B] opacity-30"></div>
-                    </div>
-
+                    <h2 className="text-2xl font-serif text-gray-900 group-hover:text-[#B8860B] transition-colors mb-2">
+                      {room.title}
+                    </h2>
                     <p className="text-[#B8860B] text-xl font-bold mb-4">
                       ₩{room.price?.toLocaleString()} <span className="text-gray-400 text-sm font-normal">/ 1박</span>
                     </p>
-                    
                     <p className="text-gray-600 text-[16px] leading-relaxed line-clamp-2">
                       {room.description}
                     </p>
-                    
-                    <div className="mt-6 flex items-center text-[#B8860B] text-xs font-bold tracking-widest">
-                      DETAILS VIEW <span className="ml-2 group-hover:translate-x-2 transition-transform">→</span>
-                    </div>
                   </div>
                 </div>
               </Link>
             ))
           ) : (
             <div className="col-span-full py-20 text-center">
-              <p className="text-gray-400 font-serif text-xl italic">객실 정보를 불러오는 중입니다...</p>
+              <p className="text-gray-400 font-serif text-xl italic">멋진 객실의 정보를 불러오는 중입니다...</p>
             </div>
           )}
         </div>
-      </div>
 
-      {/* 📱 2. 모바일 하단 고정 메뉴 바 추가 */}
-      <div className="fixed bottom-6 left-0 right-0 z-50 px-6">
-        <div className="max-w-md mx-auto bg-gray-900/90 backdrop-blur-xl rounded-[24px] p-2 shadow-2xl flex gap-2 border border-white/10">
-          {/* 방 둘러보기: 클릭 시 상단(#top)으로 부드럽게 이동 */}
-          <Link 
-            href="#top"
-            className="flex-1 text-white py-4 rounded-[18px] font-bold text-center text-sm active:scale-95 transition-all"
-          >
-            방 둘러보기
-          </Link>
-
-          {/* 나의 예약확인: 강조색(골드/블루) 적용 */}
+        {/* --- 🚀 회장님의 핵심 요청 반영 구역 --- */}
+        {/* 모든 방을 둘러본 후 나타나는 하단 버튼 섹션 */}
+        <div className="mt-20 mb-20 text-center border-t border-gray-100 pt-16">
+          <p className="text-gray-400 mb-6 font-serif italic text-sm">이미 예약을 마치셨나요?</p>
           <Link 
             href="/check-reservation"
-            className="flex-1 bg-blue-600 text-white py-4 rounded-[18px] font-bold text-center text-sm shadow-lg active:scale-95 transition-all"
+            className="inline-block bg-[#B8860B] text-white px-12 py-5 rounded-full font-bold text-lg shadow-xl hover:bg-[#8B6508] active:scale-95 transition-all"
           >
-            나의 예약확인
+            나의 예약 확인하기
           </Link>
         </div>
       </div>
