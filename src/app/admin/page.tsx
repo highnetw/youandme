@@ -2,6 +2,7 @@
 
 import React, { useEffect, useState } from 'react';
 import { supabase } from '@/lib/supabase';
+import Link from 'next/link'; // ⬅️ 분기를 위한 연결 통로
 
 interface Reservation {
   id: string;
@@ -42,9 +43,8 @@ export default function AdminPage() {
     fetchReservations();
   }, []);
 
-  // 2. 예약 상태 업데이트 (대기 -> 확정 / 확정 -> 취소 등)
+  // 2. 예약 상태 업데이트
   const updateStatus = async (id: string, newStatus: string) => {
-    // 사용자에게 한 번 더 물어보는 센스!
     if (!confirm(`예약 상태를 [${newStatus}] 상태로 변경하시겠습니까?`)) return;
 
     const { error } = await supabase
@@ -55,39 +55,51 @@ export default function AdminPage() {
     if (error) {
       alert('상태 업데이트 실패: ' + error.message);
     } else {
-      fetchReservations(); // DB 변경 후 목록 새로고침
+      fetchReservations();
     }
   };
 
-  if (loading) return <div className="p-10 text-center text-gray-500">데이터를 불러오는 중입니다...</div>;
+  if (loading) return <div className="p-10 text-center text-gray-500 font-mono italic">SYSTEM LOADING...</div>;
 
   return (
-    <div className="min-h-screen bg-gray-50 p-4 md:p-8">
+    <div className="min-h-screen bg-gray-50 p-4 md:p-8 pb-24">
       <div className="max-w-4xl mx-auto">
-        <header className="flex justify-between items-center mb-8">
+        
+        {/* 🚀 회장님이 원하신 '분기 메뉴' - 앱의 탭 버튼 역할 */}
+        <nav className="flex gap-2 mb-10 bg-white p-1.5 rounded-2xl shadow-sm border border-gray-100">
+          <Link href="/admin" className="flex-1 text-center py-3.5 rounded-xl bg-gray-900 text-white font-bold text-sm shadow-md transition-all">
+            📅 예약 관리
+          </Link>
+          <Link href="/admin/reviews" className="flex-1 text-center py-3.5 rounded-xl bg-white text-gray-400 font-bold text-sm hover:bg-gray-50 transition-all">
+            ✍️ 리뷰 관리
+          </Link>
+        </nav>
+
+        <header className="flex justify-between items-center mb-8 px-2">
           <div>
-            <h1 className="text-2xl font-bold text-gray-900 font-serif italic">Admin Console</h1>
-            <p className="text-xs text-gray-500 mt-1">Stay YouandMe 예약 관리 시스템</p>
+            <h1 className="text-2xl font-bold text-gray-900 font-serif italic tracking-tighter">Admin Console</h1>
+            <p className="text-[12px] text-gray-400 mt-1 font-mono uppercase tracking-widest">Stay YouandMe Management</p>
           </div>
           <button 
             onClick={fetchReservations}
-            className="text-sm bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm hover:bg-gray-50 transition-colors"
+            className="text-xs font-bold bg-white border border-gray-200 px-4 py-2 rounded-lg shadow-sm hover:shadow-md transition-all"
           >
             새로고침
           </button>
         </header>
 
-        <div className="space-y-4">
+        {/* 📋 예약 내역 리스트 */}
+        <div className="space-y-5">
           {reservations.length === 0 ? (
-            <div className="bg-white rounded-3xl p-20 text-center border border-dashed border-gray-300">
-              <p className="text-gray-500">아직 예약 내역이 없습니다.</p>
+            <div className="bg-white rounded-[40px] p-24 text-center border border-dashed border-gray-200 shadow-inner">
+              <p className="text-gray-400 italic">아직 예약 데이터가 없습니다.</p>
             </div>
           ) : (
             reservations.map((res) => (
-              <div key={res.id} className="bg-white p-6 rounded-3xl shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between gap-6 transition-all hover:shadow-md">
-                <div className="space-y-2">
+              <div key={res.id} className="bg-white p-7 rounded-[35px] shadow-sm border border-gray-100 flex flex-col md:flex-row justify-between gap-6 transition-all hover:shadow-xl hover:-translate-y-1">
+                <div className="space-y-3">
                   <div className="flex items-center gap-3">
-                    <span className={`px-2.5 py-1 rounded-full text-[10px] font-extrabold uppercase tracking-wider ${
+                    <span className={`px-3 py-1 rounded-full text-[10px] font-black uppercase tracking-wider ${
                       res.status === '대기' ? 'bg-amber-100 text-amber-700' : 
                       res.status === '확정' ? 'bg-emerald-100 text-emerald-700' : 'bg-red-50 text-red-600'
                     }`}>
@@ -98,58 +110,56 @@ export default function AdminPage() {
                   
                   <div className="text-gray-800">
                     <p className="text-sm">
-                      <span className="font-bold text-lg text-[#0056b3]">[{res.rooms?.title}]</span>
-                      <span className="mx-2 text-gray-300">|</span>
-                      <span className="font-medium text-gray-600">
-                        {String(res.check_in).slice(2)} ~ {String(res.check_out).slice(2)}
+                      <span className="font-black text-xl text-[#0056b3]">{res.rooms?.title}</span>
+                      <span className="mx-2 text-gray-200">|</span>
+                      <span className="font-bold text-gray-500 font-mono">
+                        {String(res.check_in).slice(5)} ~ {String(res.check_out).slice(5)}
                       </span>
                     </p>
-                    <p className="text-xs text-gray-500 mt-1">연락처: {res.phone_number}</p>
-                    <p className="font-bold text-gray-900 mt-2">
-                      결제금액: <span className="text-blue-600">₩{res.total_price?.toLocaleString()}</span>
+                    <p className="text-xs text-gray-400 mt-2 flex items-center gap-1">
+                       <span className="opacity-50">📞</span> {res.phone_number}
+                    </p>
+                    <p className="font-black text-gray-900 mt-3 text-lg">
+                      결제금액: <span className="text-blue-600 underline decoration-blue-100 decoration-4">₩{res.total_price?.toLocaleString()}</span>
                     </p>
                   </div>
                 </div>
 
                 {/* 🛠️ 상태 변경 버튼 섹션 */}
-                <div className="flex items-center gap-2 self-end md:self-center">
-                  {/* 대기 상태일 때만 확정 버튼 노출 */}
+                <div className="flex flex-wrap items-center gap-2 self-end md:self-center">
                   {res.status === '대기' && (
                     <button 
                       onClick={() => updateStatus(res.id, '확정')}
-                      className="bg-gray-900 text-white px-5 py-2.5 rounded-xl text-xs font-bold transition-all hover:bg-black active:scale-95 shadow-sm"
+                      className="bg-gray-900 text-white px-6 py-3 rounded-2xl text-xs font-bold transition-all hover:bg-black active:scale-95 shadow-lg shadow-gray-200"
                     >
                       입금확인 (확정)
                     </button>
                   )}
 
-                  {/* 확정 상태일 때 대기로 되돌리는 버튼 (실수 방지용) */}
                   {res.status === '확정' && (
                     <button 
                       onClick={() => updateStatus(res.id, '대기')}
-                      className="bg-white border border-gray-200 text-gray-500 px-5 py-2.5 rounded-xl text-xs font-bold transition-all hover:bg-gray-50 active:scale-95"
+                      className="bg-white border border-gray-200 text-gray-400 px-6 py-3 rounded-2xl text-xs font-bold transition-all hover:bg-gray-50"
                     >
-                      확정취소 (대기)
+                      확정취소
                     </button>
                   )}
 
-                  {/* 취소 상태가 아닐 때만 취소 버튼 노출 */}
                   {res.status !== '취소' && (
                     <button 
                       onClick={() => updateStatus(res.id, '취소')}
-                      className="bg-white border border-red-100 text-red-400 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-red-50 hover:text-red-600 transition-all active:scale-95"
+                      className="bg-red-50 text-red-400 px-6 py-3 rounded-2xl text-xs font-bold hover:bg-red-500 hover:text-white transition-all active:scale-95"
                     >
                       예약취소
                     </button>
                   )}
                   
-                  {/* 취소된 예약은 다시 대기로 살릴 수 있게 추가 */}
                   {res.status === '취소' && (
                     <button 
                       onClick={() => updateStatus(res.id, '대기')}
-                      className="bg-blue-50 text-blue-600 px-5 py-2.5 rounded-xl text-xs font-bold hover:bg-blue-100 transition-all"
+                      className="bg-blue-50 text-blue-600 px-6 py-3 rounded-2xl text-xs font-bold hover:bg-blue-600 hover:text-white transition-all"
                     >
-                      예약복구 (대기)
+                      복구하기
                     </button>
                   )}
                 </div>

@@ -16,10 +16,10 @@ export default async function Home() {
         {/* 헤더 섹션: 사진과 문구가 돋보이는 구간 */}
         <header className="mb-12 text-center md:text-left">
           <span className="text-[#B8860B] text-xs font-bold tracking-[0.3em] uppercase">Private & Nature</span>
-          <h1 className="text-4xl md:text-5xl font-serif text-gray-900 mt-3 leading-tight">
-            YouAndMe <span className="font-light italic">Rooms</span>
+          <h1 className="text-4xl md:text-5xl font-serif italic text-gray-900 mt-3 leading-tight">
+            You&Me <span className="font-light italic">Pension</span>
           </h1>
-          <p className="text-gray-500 mt-4 text-lg">품격 있는 휴식을 위한 특별한 공간</p>
+          <p className="text-gray-500 mt-4 text-lg">품격 있는 휴식을 위한 럭셔리 힐링</p>
         </header>
         
         {/* 객실 리스트 섹션 (최대 7개) */}
